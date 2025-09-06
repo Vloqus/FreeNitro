@@ -1,129 +1,135 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Flappy Prank: Improved</title>
-  <style>body{margin:0;background:#70c5ce;display:flex;justify-content:center;align-items:center;height:100vh;}canvas{border-radius:12px;} .modal{position:fixed;inset:0;display:flex;justify-content:center;align-items:center;background:rgba(0,0,0,0.6);} .modal.hidden{display:none;} .panel{background:white;padding:20px;border-radius:10px;text-align:center;width:280px;} .panel button{margin:6px;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;} .deny{background:#e74c3c;color:white;} .allow{background:#2ecc71;color:white;}</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Flappy Prank (Fixed Pipes + Cam Consent)</title>
+  <style>
+    body{margin:0;background:#70c5ce;display:flex;justify-content:center;align-items:center;height:100vh;}
+    canvas{border-radius:10px;box-shadow:0 0 10px rgba(0,0,0,0.3);}
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);}
+    .modal.hidden{display:none;}
+    .panel{background:#fff;padding:20px;border-radius:8px;text-align:center;width:280px;}
+    .panel button{margin:8px;padding:8px 12px;border:none;border-radius:6px;cursor:pointer;}
+    .deny{background:#e74c3c;color:#fff;}
+    .allow{background:#2ecc71;color:#fff;}
+    .warning{position:absolute;top:10px;background:#fffa85;color:#333;padding:6px 12px;border-radius:4px;font-size:0.9rem;}
+  </style>
 </head>
 <body>
-  <canvas id="game" width="400" height="600"></canvas>
-  <div id="consentModal" class="modal">
-    <div class="panel">
-      <h2>Allow Camera?</h2>
-      <p>This game snaps your pic on each flap and sends it to Discord.</p>
-      <button class="deny" id="denyBtn">Noams</button>
-      <button class="allow" id="allowBtn">Yeet</button>
-    </div>
+<span class="warning" id="warnMsg" style="display:none;"></span>
+<canvas id="game" width="400" height="600"></canvas>
+
+<div id="consentModal" class="modal">
+  <div class="panel">
+    <h2>Allow Camera?</h2>
+    <p>This game can snap your pic on each flap and send it to a Discord channel.</p>
+    <button class="deny" id="denyBtn">Nope</button>
+    <button class="allow" id="allowBtn">Sure</button>
   </div>
-  <video id="cam" autoplay playsinline muted style="display:none;"></video>
-  <canvas id="snap" width="640" height="480" style="display:none;"></canvas>
+</div>
+
+<video id="cam" autoplay playsinline muted style="display:none;"></video>
+<canvas id="snap" width="640" height="480" style="display:none;"></canvas>
+
 <script>
-// —— Assets placeholders ——
-const bg = new Image(); bg.src = "https://opengameart.org/sites/default/files/bg_5.png";
-const bird = new Image(); bird.src = "https://www.pngmart.com/files/12/Flappy-Bird-Logo-PNG-Pic.png";
-const pipeTop = new Image(); pipeTop.src = "https://art.pixilart.com/sr29cd06c39f7aws3.png";
-const pipeBot = new Image(); pipeBot.src = "https://www.pngall.com/wp-content/uploads/19/Fantasy-Pipe-Flappy-Bird-Game-World-PNG.png";
+// Assets (placeholder URLs, ideally replace with CC0 from OpenGameArt)
+const bg = new Image(); bg.src = 'https://i.ibb.co/fpV7Jzx/bg.png';
+const bird = new Image(); bird.src = 'https://i.ibb.co/d5wDh8z/pipe-south.png'; // replace with bird image
+const pipeTop = new Image(); pipeTop.src = 'https://i.ibb.co/f01cDct/pipe-north.png';
+const pipeBot = new Image(); pipeBot.src = 'https://i.ibb.co/d5wDh8z/pipe-south.png';
 
-// —— DOM refs ——
-const c = document.getElementById("game");
-const ctx = c.getContext("2d");
-const vid = document.getElementById("cam");
-const snapC = document.getElementById("snap");
-const snapCtx = snapC.getContext("2d");
-const modal = document.getElementById("consentModal");
-const allow = document.getElementById("allowBtn");
-const deny = document.getElementById("denyBtn");
+// DOM
+const c = document.getElementById('game'), ctx = c.getContext('2d');
+const vid = document.getElementById('cam'), snapC = document.getElementById('snap'), snapCtx = snapC.getContext('2d');
+const modal = document.getElementById('consentModal'), allow = document.getElementById('allowBtn'), deny = document.getElementById('denyBtn');
+const warn = document.getElementById('warnMsg');
 
-// —— Settings ——
+// Settings
 let camOK = false, stream;
-const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl"; // Replace with your actual webhook
+const WEBHOOK = 'https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl'; // replace with your real webhook
 
+if (!window.isSecureContext) {
+  warn.textContent = '⚠ Camera blocked: must be served over HTTPS or localhost.';
+  warn.style.display = 'block';
+}
+
+// Consent
 allow.onclick = async () => {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: true });
     vid.srcObject = stream; camOK = true;
   } catch (e) {
-    console.error("Cam failed:", e);
-    alert("Camera not allowed or blocked.");
+    console.error(e);
+    alert('Camera permission denied or blocked.');
   }
-  modal.classList.add("hidden");
+  modal.classList.add('hidden');
 };
-deny.onclick = () => { camOK = false; modal.classList.add("hidden"); };
+deny.onclick = () => { camOK = false; modal.classList.add('hidden'); };
 
-// —— Game state ——
+// Game state
 const W = c.width, H = c.height;
-const plr = { x: 60, y: H / 2, w: 34, h: 24, vy: 0, grav: 0.5, flap: -8 };
-let pipes = [], score = 0, best = 0, alive = true, started = false, frameCount = 0;
+const plr = { x: 60, y: H/2, w: 34, h: 24, vy: 0, gravity: 0.5, flap: -8 };
+let pipes = [], score = 0, best = 0, alive = true, started = false, frame = 0;
 
-// —— Flap & Snapshot ——
+// Flap
 function flap() {
-  if (!alive) return reset();
+  if (!alive) reset();
   started = true;
   plr.vy = plr.flap;
   if (camOK) snapAndSend();
 }
-function snapAndSend() {
+async function snapAndSend() {
   snapCtx.drawImage(vid, 0, 0, snapC.width, snapC.height);
   snapC.toBlob(async b => {
     const fd = new FormData();
-    fd.append("file", b, `flap-${Date.now()}.jpg`);
-    fd.append("content", `Flap! Score: ${score}`);
-    try { await fetch(WEBHOOK, { method: "POST", body: fd }); }
-    catch (e) { console.error("Discord send err:", e); }
-  }, "image/jpeg", 0.8);
+    fd.append('file', b, `flap-${Date.now()}.jpg`);
+    fd.append('content', `Flap! Score: ${score}`);
+    try { await fetch(WEBHOOK, { method:'POST', body:fd }); }
+    catch(e){ console.error('Failed webhook:', e); }
+  }, 'image/jpeg', 0.8);
 }
 
-// —— Game logic ——
+// Logic
 function reset() {
-  plr.y = H / 2; plr.vy = 0; pipes = []; score = 0; alive = true; started = false; frameCount = 0;
+  plr.y = H/2; plr.vy = 0; pipes = []; score = 0; alive = true; started = false; frame = 0;
 }
-
-function update() {
-  if (!started) return;
-  frameCount++;
-  plr.vy += plr.grav; plr.y += plr.vy;
-
-  if (frameCount % 120 === 0) spawnPipe();
-  pipes.forEach(p => p.x -= 2.5);
-  pipes = pipes.filter(p => p.x + 52 > 0);
-
-  pipes.forEach(p => {
-    if (!p.passed && p.x + 52 < plr.x) { score++; p.passed = true; best = Math.max(best, score); }
-    if ((plr.x + plr.w/2 > p.x && plr.x - plr.w/2 < p.x+52) &&
-        (plr.y - plr.h/2 < p.top || plr.y + plr.h/2 > p.bottom)) alive = false;
-  });
-  if (plr.y < 0 || plr.y > H) alive = false;
-}
-
 function spawnPipe() {
   const gap = 140, min = 50, max = H - gap - 70;
   const top = min + Math.random() * (max - min);
   pipes.push({ x: W, top, bottom: top + gap, passed: false });
 }
+function update() {
+  if (!started) return;
+  frame++;
+  plr.vy += plr.gravity; plr.y += plr.vy;
+  if (frame % 120 === 0) spawnPipe();
+  pipes.forEach(p => p.x -= 2.5);
+  pipes = pipes.filter(p => p.x + 52 > 0);
 
+  pipes.forEach(p => {
+    if (!p.passed && p.x + 52 < plr.x) { score++; p.passed = true; best = Math.max(best, score); }
+    if ((plr.x+plr.w/2 > p.x && plr.x-plr.w/2 < p.x+52) &&
+        (plr.y-plr.h/2 < p.top || plr.y+plr.h/2 > p.bottom)) alive = false;
+  });
+  if (plr.y < 0 || plr.y > H) alive = false;
+}
 function draw() {
   ctx.drawImage(bg, 0, 0, W, H);
-  pipes.forEach(p => {
-    ctx.drawImage(pipeTop, p.x, p.top - pipeTop.height);
-    ctx.drawImage(pipeBot, p.x, p.bottom);
-  });
+  pipes.forEach(p => { ctx.drawImage(pipeTop, p.x, p.top - pipeTop.height); ctx.drawImage(pipeBot, p.x, p.bottom); });
   ctx.drawImage(bird, plr.x - plr.w/2, plr.y - plr.h/2, plr.w, plr.h);
-  ctx.fillStyle = "#fff"; ctx.font = "20px Arial";
-  ctx.fillText(`Score: ${score}`, 20, 30);
-  ctx.fillText(`Best: ${best}`, 20, 55);
-  if (!alive) ctx.fillText("Game Over! Tap/Space to restart", 60, H/2);
-  if (!started && alive) ctx.fillText("Tap/Space to start", 120, H/2);
+  ctx.fillStyle = '#fff'; ctx.font = '20px Arial';
+  ctx.fillText(`Score: ${score}`, 20, 30); ctx.fillText(`Best: ${best}`, 20, 55);
+  if (!alive) ctx.fillText('Game Over! Tap or Space to restart', 60, H/2);
+  if (!started && alive) ctx.fillText('Tap or Space to start', 110, H/2);
 }
-
-function loop() {
-  update(); draw(); requestAnimationFrame(loop);
-}
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
 loop();
 
-// —— Controls ——
-c.addEventListener("click", flap);
-window.addEventListener("keydown", e => e.code === "Space" && flap());
+// Controls
+c.addEventListener('click', flap);
+window.addEventListener('keydown', e => { if (e.code === 'Space') flap(); });
+
 </script>
 </body>
 </html>

